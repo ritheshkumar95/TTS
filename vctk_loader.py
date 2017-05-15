@@ -73,9 +73,9 @@ def data_loader(set='train',batch_size=32,use_speaker=True,append_tokens=False,c
                 ctx[j,:cur_len] = cond_vector[j]
                 ctx_mask[j,:cur_len] = 1.
 
-        spk_ids = data['speaker_index'][sorted_idxs][:,0] #subtract 1 for 0 indexing
 
         if use_speaker:
+            spk_ids = data['speaker_index'][sorted_idxs][:,0] #subtract 1 for 0 indexing
             yield (
                    spk_ids,
                    X,

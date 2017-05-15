@@ -5,16 +5,65 @@ import lib.ops
 import numpy as np
 import time
 import lasagne
-import vctk_loader
+import nltk
+import re
+import random
+import pickle
 
-BATCH_SIZE = 16
+def data_loader(set='train',batch_size=16):
+    phon_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/phon2code.pkl'))
+    char_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/char2code.pkl'))
+    # phon_to_idx = pickle.load(open('phon2code.pkl'))
+    # char_to_idx = pickle.load(open('char2code.pkl'))
+    model = nltk.corpus.cmudict.dict()
+    data = np.asarray(list(model.iteritems()),dtype=object)
+
+    remove_num = lambda c: re.sub('\d+','',c.lower())
+    def pad_and_mask(data,end_idx):
+        max_len = max([len(x) for x in data])+2
+        new_data = np.zeros((len(data),max_len)).astype('int32')
+        mask = np.zeros((len(data),max_len)).astype('float32')
+        for i in xrange(len(data)):
+            new_data[i,1:len(data[i])+1] = data[i]
+            # new_data[i,1+len(data[i])] = end_idx
+            new_data[i,0] = end_idx
+            mask[i,:len(data[i])+2] = 1.
+        return new_data,mask
+
+    total_len = len(data)
+    np.random.seed(111)
+    idxs = range(total_len)
+    np.random.shuffle(idxs)
+    ranges = {}
+    ranges['train'] = (0,int(.8*len(idxs)))
+    ranges['valid'] = (int(0.8*len(idxs)),int(0.9*len(idxs)))
+    ranges['test'] = (int(0.9*len(idxs)),len(idxs))
+    idxs = idxs[slice(*ranges[set])]
+    N_FILES = (len(idxs)//batch_size)*batch_size
+
+    skip_count=0
+    for i in xrange(0,N_FILES,batch_size):
+        batch = data[idxs[i:i+batch_size]]
+        try:
+            x_t = [[char_to_idx[y] for y in list(x[0])] for x in batch]
+        except KeyError as e:
+            skip_count += 1
+            # print "Skipping ",e, "({})".format(skip_count)
+        y_t = [[phon_to_idx[remove_num(y)] for y in random.choice(x[1])] for x in batch]
+        chars,chars_mask = pad_and_mask(x_t,36)
+        phons,phons_mask = pad_and_mask(y_t,44)
+        yield chars,chars_mask,phons,phons_mask
+
+theano.tensor.cmp_sloppy=2
+
+BATCH_SIZE = 32
 N_CHARS = 37
 N_PHONS = 45
 NB_EPOCHS = 50
 LR = 0.001
 N_LAYERS = 4
 GRAD_CLIP = 1
-SAVE_FILE_NAME = 'blizzard_nmt_best.pkl'
+SAVE_FILE_NAME = 'cmudict_nmt_best.pkl'
 
 chars = T.imatrix()
 phons = T.imatrix()
@@ -94,7 +143,7 @@ def test_nmt(chars,chars_mask):
 def score(batch_size=16):
     start = time.time()
     valid_costs = []
-    valid_itr = vctk_loader.nmt_data_loader('valid',batch_size,dataset='blizzard')
+    valid_itr = data_loader('valid',batch_size)
     costs = []
     times = []
     for chars,chars_mask,phons,phons_mask in valid_itr:
@@ -170,7 +219,7 @@ if __name__=='__main__':
         costs = []
         times = []
 
-        itr = vctk_loader.nmt_data_loader('train',BATCH_SIZE,dataset='blizzard')
+        itr = data_loader('train',BATCH_SIZE)
         for a,b,c,d in itr:
             start = time.time()
             iteration += 1
@@ -184,7 +233,7 @@ if __name__=='__main__':
 
             times.append(time.time()-start)
             costs.append(loss)
-            if iteration%50==0:
+            if iteration%500==0:
                 print "Iteration: {} (Epoch {})! cost: {} time: {}" .format(iteration, i + 1, np.mean(np.asarray(costs),axis=0), np.mean(times))
 
         print "Epoch {} Completed! cost: {} time: {}" .format(i + 1,np.mean(np.asarray(costs),axis=0),np.mean(times))
