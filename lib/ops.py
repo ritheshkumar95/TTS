@@ -485,7 +485,7 @@ def AttnDecStep(name, n_input, input_dim, hidden_dim, ctx_dim, ctx, x_t, prev_st
             input_dim+hidden_dim+ctx_dim,
             n_input
         ))
-        idxs = T.argmax(logits,axis=-1)
+        idxs = T.argmax(logits,axis=-1).astype('int32')
         return idxs,state_t
     else:
         return state_t,c_t
@@ -527,7 +527,7 @@ def AttnDec(name, context, input_dim, n_input, context_dim, hidden_dim, inputs=N
         (cap,outputs), _ = theano.scan(
             step,
             sequences=None,
-            outputs_info=[T.repeat(T.as_tensor_variable(n_input-1),batch_size).astype('int64'),h0],
+            outputs_info=[T.repeat(T.as_tensor_variable(n_input-1),batch_size).astype('int32'),h0],
             go_backwards=backward,
             n_steps=200
         )
@@ -536,3 +536,103 @@ def AttnDec(name, context, input_dim, n_input, context_dim, hidden_dim, inputs=N
     out1 = output1.dimshuffle(1,0,2)
     out2 = output2.dimshuffle(1,0,2)
     return out1,out2
+
+def TLAttnDecStep(name, input_dim, n_input, hidden_dim, ctx_dim, ctx, x_t, h_tm1, type='LSTM', mode='train',weightnorm=True):
+    state_end_idx = 2*hidden_dim if type=='LSTM' else 1*hidden_dim
+    state = h_tm1[:,:state_end_idx]
+    feed = h_tm1[:,state_end_idx:]
+    if mode=='open-loop':
+        x_t = lib.ops.Embedding(
+            'NMT.Embedding_Phons',
+            n_input,
+            input_dim,
+            x_t
+            )
+        print "going in"
+    input_to_rnn = T.concatenate([x_t,feed],-1)
+    mask_t = T.ones((x_t.shape[0],)).astype(theano.config.floatX)
+    if type=='LSTM':
+        state_t = LSTMStep(name, input_dim+hidden_dim, hidden_dim, mask_t, input_to_rnn, state)
+        h_t = state_t[:,:hidden_dim]
+        c_t = state_t[:,hidden_dim:]
+    elif type=='GRU':
+        state_t = GRUStep(name, input_dim+hidden_dim, hidden_dim, mask_t, input_to_rnn, state)
+        h_t = state_t
+
+    target_t = T.shape_padright(lib.ops.Linear(
+        name+'.target_t',
+        h_t,
+        hidden_dim,
+        ctx_dim,
+        bias=False
+    ))
+
+    a_t = T.nnet.softmax(T.batched_dot(ctx,target_t)[:,:,0])
+    z_t = T.sum(T.shape_padright(a_t)*ctx,axis=1)
+
+    output_t = T.tanh(lib.ops.Linear(
+        name+'.output_t',
+        T.concatenate([h_t,z_t],-1),
+        ctx_dim+hidden_dim,
+        hidden_dim,
+        bias=False
+        ))
+
+    new_state = T.concatenate([state_t,output_t],-1)
+    if mode=='open-loop':
+        logits = T.nnet.softmax(lib.ops.Linear(
+            name+'.Output.MLP.1',
+            output_t,
+            hidden_dim,
+            n_input
+        ))
+        idxs = T.argmax(logits,axis=-1).astype('int32')
+        return idxs,new_state
+    else:
+        return new_state
+
+def TLAttnDec(name, type, context, input_dim, n_input, context_dim, hidden_dim, inputs=None, mode='train',h0=None, backward=False, weightnorm=True):
+    #inputs.shape = (batch_size,N_FRAMES,FRAME_SIZE)
+    def step(x_t, h_tm1):
+        return TLAttnDecStep(
+            name,
+            input_dim,
+            n_input,
+            hidden_dim,
+            context_dim,
+            context,
+            x_t,
+            h_tm1,
+            type=type,
+            mode=mode,
+            weightnorm=weightnorm
+        )
+
+    if h0 is None:
+        size = 3*hidden_dim if type=='LSTM' else 2*hidden_dim
+        batch_size=context.shape[0]
+        h0 = T.tile(lib.param(
+            name+'.h0',
+            np.zeros((1,size)).astype('float32')
+            ), [batch_size,1])
+
+    if mode=='train':
+        outputs, _ = theano.scan(
+            step,
+            sequences=[inputs.transpose(1,0,2)],
+            outputs_info=[h0],
+            go_backwards=backward
+        )
+    else:
+        batch_size = T.shape(h0)[0]
+        (cap,outputs), _ = theano.scan(
+            step,
+            sequences=None,
+            outputs_info=[T.repeat(T.as_tensor_variable(n_input-1),batch_size).astype('int32'),h0],
+            go_backwards=backward,
+            n_steps=100
+        )
+        return cap
+
+    out = outputs.dimshuffle(1,0,2)
+    return out

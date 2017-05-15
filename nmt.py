@@ -14,7 +14,7 @@ NB_EPOCHS = 50
 LR = 0.001
 N_LAYERS = 4
 GRAD_CLIP = 1
-SAVE_FILE_NAME = 'blizzard_nmt_best.pkl'
+SAVE_FILE_NAME = 'vctk_nmt_best.pkl'
 
 chars = T.imatrix()
 phons = T.imatrix()
@@ -94,7 +94,7 @@ def test_nmt(chars,chars_mask):
 def score(batch_size=16):
     start = time.time()
     valid_costs = []
-    valid_itr = vctk_loader.nmt_data_loader('valid',batch_size,dataset='blizzard')
+    valid_itr = vctk_loader.nmt_data_loader('valid',batch_size,dataset='vctk')
     costs = []
     times = []
     for chars,chars_mask,phons,phons_mask in valid_itr:
@@ -170,7 +170,7 @@ if __name__=='__main__':
         costs = []
         times = []
 
-        itr = vctk_loader.nmt_data_loader('train',BATCH_SIZE,dataset='blizzard')
+        itr = vctk_loader.nmt_data_loader('train',BATCH_SIZE,dataset='vctk')
         for a,b,c,d in itr:
             start = time.time()
             iteration += 1

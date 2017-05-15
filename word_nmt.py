@@ -157,22 +157,26 @@ def score(batch_size=16):
     print "Validation Completed! cost: {} time: {}".format(np.mean(np.asarray(valid_costs),axis=0),time.time()-start)
     return np.mean(valid_costs)
 
-def test(batch_size=1):
+def test(text,batch_size=1):
     import random
+    tknzr = nltk.tokenize.WordPunctTokenizer()
     phon_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/phon2code.pkl'))
     char_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/char2code.pkl'))
     idx_to_phon = {x:y for y,x in phon_to_idx.iteritems()}
     idx_to_char = {x:y for y,x in char_to_idx.iteritems()}
     idx_to_char[36] = '#START'
     idx_to_char[0] = '#END'
-    test_itr = vctk_loader.nmt_data_loader('test',batch_size)
-    for i in xrange(random.choice(range(20))):
-        chars,chars_mask,phons,phons_mask = test_itr.next()
+
+    # test_itr = vctk_loader.nmt_data_loader('test',batch_size)
+    # for i in xrange(random.choice(range(20))):
+    #     chars,chars_mask,phons,phons_mask = test_itr.next()
+    chars = np.asarray([36]+[char_to_idx[x] for x in list(text.lower())]+[0],dtype=np.int32).reshape((1,-1))
+    chars_mask = np.ones_like(chars).astype('float32')
     preds = predict_fn(chars,chars_mask).flatten()
     end_idx = np.where(preds==0)[0][0]
     preds = preds[:end_idx].tolist()
     print [idx_to_phon[x] for x in preds]
-    print ''.join([idx_to_char[x] for x in chars.flatten().tolist()])
+    # print ''.join([idx_to_char[x] for x in chars.flatten().tolist()])
 
 
 if __name__=='__main__':
