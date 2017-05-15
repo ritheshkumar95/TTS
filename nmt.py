@@ -9,7 +9,7 @@ import vctk_loader
 
 theano.tensor.cmp_sloppy=2
 
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 N_CHARS = 37
 N_PHONS = 45
 NB_EPOCHS = 50
@@ -58,7 +58,7 @@ def train_nmt(chars,chars_mask,phons):
         mode='train'
     )
     readout = lib.ops.Linear(
-        'Output.MLP.1',
+        'NMT.AttentionalDecoder.Output.MLP.1',
         T.concatenate([emb_phons,out1[:,:,:256],out2],-1),
         256+256+256,
         N_PHONS

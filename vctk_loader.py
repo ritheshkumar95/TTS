@@ -13,7 +13,7 @@ def get_data_idxs(PATH,set):
     ranges['valid'] = (int(0.8*len(idxs)),int(0.9*len(idxs)))
     ranges['test'] = (int(0.9*len(idxs)),len(idxs))
     idxs = idxs[slice(*ranges[set])]
-    print "{} indexes starts at {} with total of {} data points!".format(set,idxs[:5],len(idxs))
+    # print "{} indexes starts at {} with total of {} data points!".format(set,idxs[:5],len(idxs))
     return data,idxs
 
 def data_loader(set='train',batch_size=32,use_speaker=True,append_tokens=False,conditioning='phonemes',dataset='vctk'):
@@ -53,7 +53,8 @@ def data_loader(set='train',batch_size=32,use_speaker=True,append_tokens=False,c
             X_mask[j,:cur_len] = 1.
 
         max_ctx_shape = max([x.shape[0] for x in cond_vector])
-        assert max_feat_shape==max_ctx_shape,"Mismatch error"
+        if conditioning=='aligned_phonemes':
+            assert max_feat_shape==max_ctx_shape,"Mismatch error"
         if append_tokens:
             max_ctx_shape += 2
             start_token = 36 if conditioning=='text' else 44

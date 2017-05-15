@@ -69,7 +69,7 @@ predict_readout = lib.ops.RNN(
 )
 
 readout = lib.ops.Linear(
-    'Output.MLP.1',
+    'Generator.GRU.Output.MLP.1',
     T.concatenate([state[:,:,-1],tiled_speaker],-1),
     DEC_DIM+SPEAKER_DIM,
     OUTPUT_DIM
@@ -130,38 +130,21 @@ def writewav():
     [generate.generate_wav(out_data[i],base='original_sample_%d'%i,do_post_filtering=False) for i in xrange(data.shape[0])]
 
 def predict(batch_size=1):
-    test_stream = parrot_stream(
-        'vctk',
-        True,
-        ('valid',),
-        batch_size,
-        noise_level = 0,
-        labels_type='phonemes',
-        seq_size=3000
-    )
-    itr = test_stream.get_epoch_iterator()
-
-    # batch = np.random.choice(28)
-    # batch=6
-    # for j in range(batch):
-    #     test_X,test_mask,test_ctx,test_spk,test_reset,test_noise_level = itr.next()
-
-    for j in xrange(2):
-        for test_X,test_mask,test_ctx,test_spk,test_reset,test_noise_level in itr:
-            if test_X.shape[0]>400:
+    itr = vctk_loader.data_loader('test',batch_size)
+    count=0
+    batch = np.random.choice(500)
+    for j in xrange(5):
+        for test_spk,test_X,test_X_mask,test_ctx,test_ctx_mask in itr:
+            if test_X.shape[1]>500:
                 break
-
-    test_X = test_X.transpose((1,0,2))
-    test_ctx = test_ctx.T
-    test_mask = test_mask.T
 
     train_X = test_X.copy()
     test_X = predict_fn(
-          test_spk[:,0],
+          test_spk,
           test_ctx,
-        )*test_mask[:,:,None]
+        )*test_X_mask[:,:,None]
 
-    print np.sum((train_X[:batch_size]-test_X)**2)/np.sum(test_mask)
+    print np.sum((train_X[:batch_size]-test_X)**2)/(np.sum(test_X_mask)*63)
     np.save('test_X',test_X)
     np.save('train_X',train_X[:batch_size])
 
@@ -169,20 +152,6 @@ def score(batch_size=16):
     costs = []
     times = []
     itr = vctk_loader.data_loader('valid',batch_size)
-    # valid_stream = parrot_stream(
-    #     'vctk',
-    #     True,
-    #     ('valid',),
-    #     batch_size,
-    #     noise_level = 0.,
-    #     labels_type='phonemes',
-    #     seq_size=100000
-    # )
-    # itr = valid_stream.get_epoch_iterator()
-    # for val_X,val_mask,val_ctx,val_spk,val_reset,val_noise_level in itr:
-    #     val_X = val_X.transpose((1,0,2))
-    #     val_mask =val_mask.T
-    #     val_ctx = val_ctx.T
     for val_spk,val_X,val_X_mask,val_ctx,val_ctx_mask in itr:
         start = time.time()
         _loss = test_fn(
@@ -208,20 +177,6 @@ for i in xrange(i,NB_EPOCHS):
     iter=0
     costs=[]
     times=[]
-    # train_stream = parrot_stream(
-    #     'vctk',
-    #     True,
-    #     ('train',),
-    #     BATCH_SIZE,
-    #     noise_level = 0.,
-    #     labels_type='phonemes',
-    #     seq_size=100000
-    # )
-    # itr = train_stream.get_epoch_iterator()
-    # for train_X,train_mask,train_ctx,train_spk,train_reset,train_noise_level in itr:
-    #     train_X = train_X.transpose((1,0,2))
-    #     train_mask = train_mask.T
-    #     train_ctx = train_ctx.T
     itr = vctk_loader.data_loader('train',BATCH_SIZE)
     for train_spk,train_X,train_mask,train_ctx,_ in itr:
         iter += 1

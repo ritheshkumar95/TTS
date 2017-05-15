@@ -357,7 +357,7 @@ def StackedOpenLoopRNNStep(type, name, input_dim, hidden_dim, output_dim, mask_t
     state_t = StackedRNNStep(type, name, input_dim+output_dim, hidden_dim, mask_t, input, prev_state, weightnorm=weightnorm, n_layers=n_layers, residual=residual)
     if speaker:
         readout = lib.ops.Linear(
-            'Output.MLP.1',
+            name+'.Output.MLP.1',
             T.concatenate([state_t[:,-1,:hidden_dim],x_t[:,-128:]],-1),
             hidden_dim+128,
             output_dim,
@@ -365,7 +365,7 @@ def StackedOpenLoopRNNStep(type, name, input_dim, hidden_dim, output_dim, mask_t
         )
     else:
         readout = lib.ops.Linear(
-            'Output.MLP.1',
+            name+'.Output.MLP.1',
             state_t[:,-1,:hidden_dim],
             hidden_dim,
             output_dim,
@@ -480,7 +480,7 @@ def AttnDecStep(name, n_input, input_dim, hidden_dim, ctx_dim, ctx, x_t, prev_st
     state_t = GRUStep(name, input_dim+ctx_dim, hidden_dim, mask_t, input_to_rnn, h_tm1)
     if mode=='open-loop':
         logits = T.nnet.softmax(lib.ops.Linear(
-            'Output.MLP.1',
+            name+'.Output.MLP.1',
             T.concatenate([x_t,state_t[:,:hidden_dim],c_t],-1),
             input_dim+hidden_dim+ctx_dim,
             n_input
@@ -529,11 +529,10 @@ def AttnDec(name, context, input_dim, n_input, context_dim, hidden_dim, inputs=N
             sequences=None,
             outputs_info=[T.repeat(T.as_tensor_variable(n_input-1),batch_size).astype('int64'),h0],
             go_backwards=backward,
-            n_steps=100
+            n_steps=200
         )
         return cap
 
     out1 = output1.dimshuffle(1,0,2)
     out2 = output2.dimshuffle(1,0,2)
     return out1,out2
-

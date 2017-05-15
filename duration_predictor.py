@@ -8,7 +8,7 @@ import lasagne
 import vctk_loader
 from datasets import parrot_stream
 
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 V = 43 + 1
 N_SPEAKERS = 21+1
 NB_EPOCHS = 50
@@ -135,7 +135,7 @@ def DeepVoice(X, drop_prob):
         256,
         128,
         n_layers=2,
-        residual=True
+        residual=False
     )[:,:,-1],drop_prob)
 
     out = lib.ops.Linear(
