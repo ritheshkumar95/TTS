@@ -1,4 +1,4 @@
-import theano
+muximport theano
 import theano.tensor as T
 import lib
 import lib.ops

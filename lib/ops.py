@@ -373,18 +373,48 @@ def StackedOpenLoopRNNStep(type, name, input_dim, hidden_dim, output_dim, mask_t
         )
     return readout,state_t
 
-def RNN(type, name, inputs, input_dim, hidden_dim, output_dim=None, mode='train',mask=None, backward=False, weightnorm=True, n_layers=1, residual=False, **kwargs):
+def OpenLoopDecoderStep(type, name, input_dim, hidden_dim, output_dim, mask_t, prev_output, prev_state, weightnorm=True, n_layers=1, residual=False):
+    x_t = lib.ops.Embedding(
+        'NMT.Embedding_Phons',
+        45,
+        input_dim,
+        prev_output
+    )
+    state_t = StackedRNNStep(type, name, input_dim, hidden_dim, mask_t, x_t, prev_state, weightnorm=weightnorm, n_layers=n_layers, residual=residual)
+    logits = T.nnet.softmax(lib.ops.Linear(
+        name+'.Output.MLP.1',
+        state_t[:,-1,:hidden_dim],
+        hidden_dim,
+        45
+    ))
+    idxs = T.argmax(logits,axis=-1).astype('int32')
+    return idxs,state_t
+
+def RNN(type, name, inputs, input_dim, hidden_dim, output_dim=None, mode='train',h0=None, mask=None, backward=False, weightnorm=True, n_layers=1, residual=False, **kwargs):
     #inputs.shape = (batch_size,N_FRAMES,FRAME_SIZE)
-    batch_size = T.shape(inputs)[0]
-    seq_len = T.shape(inputs)[1]
-
     size = 2*hidden_dim if type=='LSTM' else hidden_dim
-    h0 = T.tile(lib.param(
-        name+'.h0',
-        np.zeros((1,n_layers,size)).astype('float32')
-    ), [batch_size,1,1])
+    if inputs is not None:
+        batch_size = T.shape(inputs)[0]
+    elif h0 is not None:
+        batch_size = T.shape(h0)[0]
+    else:
+        batch_size = kwargs['batch_size']
 
-    inputs = inputs.dimshuffle(1,0,2)
+    if inputs is not None:
+        seq_len = T.shape(inputs)[1]
+    else:
+        try:
+            seq_len = kwargs['seq_len']
+        except:
+            print "Missing seq_len argument! Using 200"
+            seq_len = 200
+
+    if h0 is None:
+        h0 = T.tile(lib.param(
+            name+'.h0',
+            np.zeros((1,n_layers,size)).astype('float32')
+        ), [batch_size,1,1])
+
     if mask is None:
         mask = T.ones((seq_len,batch_size),dtype=theano.config.floatX)
     else:
@@ -421,7 +451,23 @@ def RNN(type, name, inputs, input_dim, hidden_dim, output_dim=None, mode='train'
             **kwargs
         )
 
+    def decoder_step(mask_t, prev_output, state_tm1):
+        return OpenLoopDecoderStep(
+            type,
+            name,
+            input_dim,
+            hidden_dim,
+            output_dim,
+            mask_t,
+            prev_output,
+            state_tm1,
+            weightnorm=weightnorm,
+            n_layers=n_layers,
+            residual=residual
+        )
+
     if mode=='train':
+        inputs = inputs.dimshuffle(1,0,2)
         states, _ = theano.scan(
             train_step,
             sequences=[mask,inputs],
@@ -431,9 +477,13 @@ def RNN(type, name, inputs, input_dim, hidden_dim, output_dim=None, mode='train'
 
         states = states.dimshuffle(1,0,2,3)
         #if LSTM return only h_t not c_t
-        return states[:,:,:,:hidden_dim]
+        if 'return_cell' in kwargs and kwargs['return_cell']=True:
+            return states
+        else:
+            return states[:,:,:,:hidden_dim]
 
-    elif mode=='test':
+    elif mode=='open-loop-rnn':
+        inputs = inputs.dimshuffle(1,0,2)
         (outputs,states), _ = theano.scan(
             open_loop_step,
             sequences=[mask,inputs],
@@ -441,6 +491,17 @@ def RNN(type, name, inputs, input_dim, hidden_dim, output_dim=None, mode='train'
             go_backwards=backward
         )
         return outputs.dimshuffle(1,0,2)
+
+    else:
+        n_input = kwargs['n_input']
+        (cap,outputs), _ = theano.scan(
+            decoder_step,
+            sequences=[mask],
+            outputs_info=[T.repeat(T.as_tensor_variable(n_input-1),batch_size).astype('int32'),h0],
+            go_backwards=backward,
+            n_steps=seq_len
+        )
+        return cap.T
 
 def BiRNN(type, name, inputs, input_dim, hidden_dim, mask=None, weightnorm=True, n_layers=1, residual=False):
     h_t1 = RNN(type, name+'.Forward', inputs, input_dim, hidden_dim, mask=mask, weightnorm=weightnorm, n_layers=n_layers, residual=residual)
@@ -531,7 +592,7 @@ def AttnDec(name, context, input_dim, n_input, context_dim, hidden_dim, inputs=N
             go_backwards=backward,
             n_steps=200
         )
-        return cap
+        return cap.T
 
     out1 = output1.dimshuffle(1,0,2)
     out2 = output2.dimshuffle(1,0,2)
@@ -632,7 +693,7 @@ def TLAttnDec(name, type, context, input_dim, n_input, context_dim, hidden_dim, 
             go_backwards=backward,
             n_steps=100
         )
-        return cap
+        return cap.T
 
     out = outputs.dimshuffle(1,0,2)
     return out

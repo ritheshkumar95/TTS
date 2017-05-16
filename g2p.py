@@ -10,6 +10,16 @@ import re
 import random
 import pickle
 from wer import wer
+theano.tensor.cmp_sloppy=2
+
+BATCH_SIZE = 64
+N_CHARS = 37
+N_PHONS = 45
+NB_EPOCHS = 50
+LR = 0.001
+N_LAYERS = 4
+GRAD_CLIP = 1
+SAVE_FILE_NAME = 'cmudict_nmt_best.pkl'
 
 def data_loader(set='train',batch_size=16):
     phon_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/phon2code.pkl'))
@@ -55,22 +65,10 @@ def data_loader(set='train',batch_size=16):
         phons,phons_mask = pad_and_mask(y_t,44)
         yield chars,chars_mask,phons,phons_mask
 
-theano.tensor.cmp_sloppy=2
-
-BATCH_SIZE = 32
-N_CHARS = 37
-N_PHONS = 45
-NB_EPOCHS = 50
-LR = 0.001
-N_LAYERS = 4
-GRAD_CLIP = 1
-SAVE_FILE_NAME = 'cmudict_attention_nmt_best.pkl'
-
 chars = T.imatrix()
 phons = T.imatrix()
 chars_mask = T.fmatrix()
 phons_mask = T.fmatrix()
-
 learn_rate = T.fscalar()
 drop_prob = T.fscalar()
 
@@ -87,28 +85,30 @@ def train_nmt(chars,chars_mask,phons):
         256,
         phons
     )
-    enc = lib.ops.BiRNN(
-        'GRU',
-        'NMT.Encoder',
+    enc = lib.ops.RNN(
+        'LSTM',
+        'NMT.EncoderStack',
         emb_chars,
         256,
-        128,
-        mask=chars_mask
-    )[:,:,0]
-    out1,out2 = lib.ops.AttnDec(
-        'NMT.AttentionalDecoder',
-        enc,
         256,
-        N_PHONS,
+        mask=chars_mask,
+        n_layers=3,
+        residual=True,
+        return_cell=True
+    )
+    out = lib.ops.RNN(
+        'LSTM',
+        'NMT.DecoderStack',
+        emb_phons,
         256,
         256,
-        inputs=emb_phons,
-        mode='train'
+        h0=enc[:,-1],
+        n_layers=3
     )
     readout = lib.ops.Linear(
-        'NMT.AttentionalDecoder.Output.MLP.1',
-        T.concatenate([emb_phons,out1[:,:,:256],out2],-1),
-        256+256+256,
+        'NMT.DecoderStack.Output.MLP.1',
+        out[:,:,-1,:256],
+        256,
         N_PHONS
     )
     return readout
@@ -120,26 +120,30 @@ def test_nmt(chars,chars_mask):
         256,
         chars
     )
-    enc = lib.ops.BiRNN(
-        'GRU',
-        'NMT.Encoder',
+    enc = lib.ops.RNN(
+        'LSTM',
+        'NMT.EncoderStack',
         emb_chars,
         256,
-        128,
-        mask=chars_mask
-    )[:,:,0]
-    readout = lib.ops.AttnDec(
-        'NMT.AttentionalDecoder',
-        enc,
         256,
-        N_PHONS,
+        mask=chars_mask,
+        n_layers=3,
+        residual=True,
+        return_cell=True
+    )
+    readout = lib.ops.RNN(
+        'LSTM',
+        'NMT.DecoderStack',
+        None,
         256,
         256,
-        inputs=None,
-        mode='open-loop'
+        h0=enc[:,-1],
+        n_layers=3,
+        mode='decoder',
+        n_input=N_PHONS,
+        seq_len=50
     )
     return readout
-
 
 def score(batch_size=16):
     start = time.time()
@@ -158,7 +162,7 @@ def score(batch_size=16):
     print "Validation Completed! cost: {} time: {}".format(np.mean(np.asarray(valid_costs),axis=0),time.time()-start)
     return np.mean(valid_costs)
 
-def score_per(eval_set='test',batch_size=16):
+def score_per_wer(batch_size=16):
     phon_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/phon2code.pkl'))
     char_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/char2code.pkl'))
     idx_to_char = {x:y for y,x in char_to_idx.iteritems()}
@@ -166,7 +170,7 @@ def score_per(eval_set='test',batch_size=16):
     model = nltk.corpus.cmudict.dict()
     start = time.time()
     valid_costs = []
-    valid_itr = data_loader(eval_set,batch_size)
+    valid_itr = data_loader('valid',batch_size)
     count_exact_match=0
     iteration=0
     for ch,ch_mask,ph,ph_mask in valid_itr:
@@ -283,7 +287,7 @@ if __name__=='__main__':
                 print "Iteration: {} (Epoch {})! cost: {} time: {}" .format(iteration, i + 1, np.mean(np.asarray(costs),axis=0), np.mean(times))
 
         print "Epoch {} Completed! cost: {} time: {}" .format(i + 1,np.mean(np.asarray(costs),axis=0),np.mean(times))
-        valid_cost = score_wer()
+        valid_cost = score_per_wer()
         if valid_cost < best_cost:
             best_cost = valid_cost
             lib.save_params(SAVE_FILE_NAME)

@@ -65,7 +65,7 @@ predict_readout = lib.ops.RNN(
     DEC_DIM,
     OUTPUT_DIM,
     n_layers=N_RNN,
-    mode='test'
+    mode='open-loop-rnn'
 )
 
 readout = lib.ops.Linear(
