@@ -76,38 +76,52 @@ def train_nmt(chars,chars_mask,phons):
     emb_chars = lib.ops.Embedding(
         'NMT.Embedding_Chars',
         N_CHARS,
-        256,
+        512,
         chars
     )
     emb_phons = lib.ops.Embedding(
         'NMT.Embedding_Phons',
         N_PHONS,
-        256,
+        512,
         phons
     )
-    enc = lib.ops.RNN(
-        'LSTM',
-        'NMT.EncoderStack',
+    enc1 = lib.ops.BiRNN(
+        'GRU',
+        'NMT.EncoderStack1',
         emb_chars,
+        512,
         256,
+        mask=chars_mask
+    )[:,:,0]
+    enc2 = lib.ops.BiRNN(
+        'GRU',
+        'NMT.EncoderStack2',
+        enc1,
+        512,
         256,
-        mask=chars_mask,
-        n_layers=3,
-        residual=True,
-        return_cell=True
-    )
+        mask=chars_mask
+    )[:,:,0]
+    enc3 = lib.ops.BiRNN(
+        'GRU',
+        'NMT.EncoderStack3',
+        enc2,
+        512,
+        256,
+        mask=chars_mask
+    )[:,:,0]
+    h0_concat = T.stack([enc1[:,-1],enc2[:,-1],enc3[:,-1]],1)[:,:,:256]
     out = lib.ops.RNN(
-        'LSTM',
+        'GRU',
         'NMT.DecoderStack',
         emb_phons,
+        512,
         256,
-        256,
-        h0=enc[:,-1],
+        h0=h0_concat,
         n_layers=3
     )
     readout = lib.ops.Linear(
         'NMT.DecoderStack.Output.MLP.1',
-        out[:,:,-1,:256],
+        out[:,:,-1],
         256,
         N_PHONS
     )
@@ -117,27 +131,41 @@ def test_nmt(chars,chars_mask):
     emb_chars = lib.ops.Embedding(
         'NMT.Embedding_Chars',
         N_CHARS,
-        256,
+        512,
         chars
     )
-    enc = lib.ops.RNN(
-        'LSTM',
-        'NMT.EncoderStack',
+    enc1 = lib.ops.BiRNN(
+        'GRU',
+        'NMT.EncoderStack1',
         emb_chars,
+        512,
         256,
+        mask=chars_mask
+    )[:,:,0]
+    enc2 = lib.ops.BiRNN(
+        'GRU',
+        'NMT.EncoderStack2',
+        enc1,
+        512,
         256,
-        mask=chars_mask,
-        n_layers=3,
-        residual=True,
-        return_cell=True
-    )
+        mask=chars_mask
+    )[:,:,0]
+    enc3 = lib.ops.BiRNN(
+        'GRU',
+        'NMT.EncoderStack3',
+        enc2,
+        512,
+        256,
+        mask=chars_mask
+    )[:,:,0]
+    h0_concat = T.stack([enc1[:,-1],enc2[:,-1],enc3[:,-1]],1)[:,:,:256]
     readout = lib.ops.RNN(
-        'LSTM',
+        'GRU',
         'NMT.DecoderStack',
         None,
+        512,
         256,
-        256,
-        h0=enc[:,-1],
+        h0=h0_concat,
         n_layers=3,
         mode='decoder',
         n_input=N_PHONS,

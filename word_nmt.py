@@ -158,7 +158,7 @@ def score(batch_size=16):
     print "Validation Completed! cost: {} time: {}".format(np.mean(np.asarray(valid_costs),axis=0),time.time()-start)
     return np.mean(valid_costs)
 
-def score_per(eval_set='test',batch_size=16):
+def score_per_wer(eval_set='test',batch_size=16):
     phon_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/phon2code.pkl'))
     char_to_idx = pickle.load(open('/data/lisa/exp/kumarrit/vctk/char2code.pkl'))
     idx_to_char = {x:y for y,x in char_to_idx.iteritems()}
@@ -283,7 +283,7 @@ if __name__=='__main__':
                 print "Iteration: {} (Epoch {})! cost: {} time: {}" .format(iteration, i + 1, np.mean(np.asarray(costs),axis=0), np.mean(times))
 
         print "Epoch {} Completed! cost: {} time: {}" .format(i + 1,np.mean(np.asarray(costs),axis=0),np.mean(times))
-        valid_cost = score_wer()
+        valid_cost = score_per_wer()
         if valid_cost < best_cost:
             best_cost = valid_cost
             lib.save_params(SAVE_FILE_NAME)
